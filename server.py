@@ -181,19 +181,26 @@ def home():
 def gumroad_webhook():
     """Receive Gumroad payment webhook"""
     try:
+        # Gumroad sends as form data
         data = request.form.to_dict()
+        
+        # Also try JSON
+        if not data:
+            data = request.get_json(silent=True) or {}
+
         print(f"Webhook received: {json.dumps(data, indent=2)}")
 
-        # Verify it's a sale
-        if data.get('sale_id') is None:
-            return jsonify({"error": "Not a sale event"}), 400
-
+        # Get email and order ID
         email    = data.get('email', '')
-        order_id = data.get('sale_id', '')
-        name     = data.get('full_name', 'Customer')
+        order_id = data.get('sale_id', '') or data.get('order_id', '')
+        
+        if not email:
+            # Try alternate fields
+            email = data.get('buyer_email', '')
 
         if not email:
-            return jsonify({"error": "No email"}), 400
+            print("No email found in webhook data")
+            return jsonify({"error": "No email found"}), 200  # Return 200 so Gumroad doesn't retry
 
         # Check not already processed
         conn = sqlite3.connect(DB_PATH)
@@ -220,7 +227,9 @@ def gumroad_webhook():
 
     except Exception as e:
         print(f"Webhook error: {e}")
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 200  # Return 200 to prevent Gumroad retries
 
 @app.route('/validate', methods=['POST'])
 def validate():
