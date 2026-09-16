@@ -135,40 +135,53 @@ def home():
 @app.route('/webhook/gumroad', methods=['POST'])
 def gumroad_webhook():
     try:
+        print("=== WEBHOOK HIT ===")
         data = request.form.to_dict()
         if not data:
             data = request.get_json(silent=True) or {}
 
-        print(f"Webhook received: {json.dumps(data, indent=2)}")
+        print(f"Data received: {json.dumps(data, indent=2)}")
 
         email    = data.get('email', '') or data.get('buyer_email', '')
-        order_id = data.get('sale_id', '') or data.get('order_id', '')
+        order_id = data.get('sale_id', '') or data.get('order_id', 'no_order_id')
+
+        print(f"Email: {email}, Order: {order_id}")
 
         if not email:
+            print("ERROR: No email found")
             return jsonify({"error": "No email"}), 200
 
+        print("Connecting to DB...")
         conn = get_db()
+        print("DB connected!")
+
         existing = conn.execute('SELECT key FROM licenses WHERE order_id = ?', (order_id,)).fetchone()
 
         if existing:
             conn.close()
+            print("Already processed!")
             return jsonify({"status": "already_processed"}), 200
 
+        print("Generating key...")
         key = generate_key()
+        print(f"Key generated: {key}")
+
         conn.execute(
             'INSERT INTO licenses (key, email, order_id, created_at) VALUES (?, ?, ?, ?)',
             (key, email, order_id, datetime.now().isoformat())
         )
         conn.commit()
         conn.close()
+        print("Saved to DB!")
 
+        print("Sending email...")
         send_license_email(email, key, order_id)
 
-        print(f"✓ License issued: {key} → {email}")
+        print(f"✓ Done! License issued: {key} → {email}")
         return jsonify({"status": "success", "key": key}), 200
 
     except Exception as e:
-        print(f"Webhook error: {e}")
+        print(f"WEBHOOK ERROR: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 200
