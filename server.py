@@ -8,19 +8,16 @@ import hmac
 import json
 import random
 import string
-import smtplib
 import sqlite3
 import os
 import threading
 from datetime import datetime
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-SECRET         = "AutoTyper@2024#Sanjiv$Secure!Key"
-GMAIL_ADDRESS  = "autotyper.keys@gmail.com"
-GMAIL_PASSWORD = "yfjaevrshnmuicac"
-DB_PATH        = "/tmp/licenses.db"
+SECRET          = "AutoTyper@2024#Sanjiv$Secure!Key"
+SENDGRID_KEY    = os.environ.get('SENDGRID_KEY', '')
+FROM_EMAIL      = "autotyper.keys@gmail.com"
+DB_PATH         = "/tmp/licenses.db"
 
 # ── App ────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -66,56 +63,72 @@ def validate_key(full_key):
     except Exception:
         return False
 
-# ── Email ──────────────────────────────────────────────────────────────────────
+# ── Email via SendGrid ─────────────────────────────────────────────────────────
 def send_license_email(email, license_key, order_id):
     try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = "Your AutoTyper License Key"
-        msg['From']    = f"AutoTyper <{GMAIL_ADDRESS}>"
-        msg['To']      = email
+        import urllib.request
+        import urllib.error
 
-        html = f"""
-        <html>
-        <body style="font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px;">
-          <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden;">
-            <div style="background: linear-gradient(135deg, #0078d4, #00b4d8); padding: 30px; text-align: center;">
-              <h1 style="color: white; margin: 0;">AutoTyper</h1>
-              <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0;">Thank you for your purchase!</p>
-            </div>
-            <div style="padding: 30px;">
-              <h2 style="color: #1a1a2e;">Your License Key</h2>
-              <div style="background: #1a1a2e; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
-                <code style="color: #00d4ff; font-size: 20px; letter-spacing: 2px; font-weight: bold;">{license_key}</code>
-              </div>
-              <h3 style="color: #1a1a2e;">How to Activate:</h3>
-              <ol style="color: #555; line-height: 1.8;">
-                <li>Open AutoTyper.exe</li>
-                <li>Enter your key when prompted</li>
-                <li>Click Activate</li>
-                <li>Done! Full access unlocked forever</li>
-              </ol>
-              <div style="background: #f0f7ff; border-left: 4px solid #0078d4; padding: 12px 16px; border-radius: 4px; margin: 20px 0;">
-                <p style="margin: 0; color: #555; font-size: 14px;">
-                  This key works on 1 device only. Need to transfer? Reply to this email.
-                </p>
-              </div>
-              <p style="color: #555;">Order ID: {order_id}</p>
-              <p style="color: #555;">Need help? Reply to this email!</p>
-            </div>
-            <div style="background: #f5f5f5; padding: 20px; text-align: center; border-top: 1px solid #eee;">
-              <p style="color: #999; font-size: 13px; margin: 0;">AutoTyper - One-time purchase - Lifetime license - 1 device</p>
-            </div>
-          </div>
-        </body>
-        </html>
-        """
+        payload = json.dumps({
+            "personalizations": [{
+                "to": [{"email": email}],
+                "subject": "Your AutoTyper License Key"
+            }],
+            "from": {"email": FROM_EMAIL, "name": "AutoTyper"},
+            "content": [{
+                "type": "text/html",
+                "value": f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px;">
+                  <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden;">
+                    <div style="background: linear-gradient(135deg, #0078d4, #00b4d8); padding: 30px; text-align: center;">
+                      <h1 style="color: white; margin: 0;">AutoTyper</h1>
+                      <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0;">Thank you for your purchase!</p>
+                    </div>
+                    <div style="padding: 30px;">
+                      <h2 style="color: #1a1a2e;">Your License Key</h2>
+                      <div style="background: #1a1a2e; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+                        <code style="color: #00d4ff; font-size: 20px; letter-spacing: 2px; font-weight: bold;">{license_key}</code>
+                      </div>
+                      <h3 style="color: #1a1a2e;">How to Activate:</h3>
+                      <ol style="color: #555; line-height: 1.8;">
+                        <li>Open AutoTyper.exe</li>
+                        <li>Enter your key when prompted</li>
+                        <li>Click Activate</li>
+                        <li>Done! Full access unlocked forever</li>
+                      </ol>
+                      <div style="background: #f0f7ff; border-left: 4px solid #0078d4; padding: 12px 16px; border-radius: 4px; margin: 20px 0;">
+                        <p style="margin: 0; color: #555; font-size: 14px;">
+                          This key works on 1 device only. Need to transfer? Reply to this email.
+                        </p>
+                      </div>
+                      <p style="color: #555;">Order ID: {order_id}</p>
+                      <p style="color: #555;">Need help? Reply to this email!</p>
+                    </div>
+                    <div style="background: #f5f5f5; padding: 20px; text-align: center; border-top: 1px solid #eee;">
+                      <p style="color: #999; font-size: 13px; margin: 0;">AutoTyper - One-time purchase - Lifetime license - 1 device</p>
+                    </div>
+                  </div>
+                </body>
+                </html>
+                """
+            }]
+        }).encode('utf-8')
 
-        msg.attach(MIMEText(html, 'html'))
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
-            server.sendmail(GMAIL_ADDRESS, email, msg.as_string())
-        print(f"Email sent to {email}")
-        return True
+        req = urllib.request.Request(
+            'https://api.sendgrid.com/v3/mail/send',
+            data=payload,
+            headers={
+                'Authorization': f'Bearer {SENDGRID_KEY}',
+                'Content-Type': 'application/json'
+            },
+            method='POST'
+        )
+
+        with urllib.request.urlopen(req) as response:
+            print(f"Email sent to {email} — Status: {response.status}")
+            return True
+
     except Exception as e:
         print(f"Email failed: {e}")
         return False
