@@ -1,6 +1,5 @@
 """
-AutoTyper License Server v3.0
-Fixed: DB initialized before every request
+AutoTyper License Server v4.0
 """
 
 from flask import Flask, request, jsonify
@@ -12,46 +11,38 @@ import string
 import smtplib
 import sqlite3
 import os
+import threading
 from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-import threading
-
-def send_email_async(email, key, order_id):
-    """Send email in background thread — prevents worker timeout"""
-    thread = threading.Thread(target=send_license_email, args=(email, key, order_id))
-    thread.daemon = True
-    thread.start()
-
-# ── Configuration ──────────────────────────────────────────────────────────────
+# ── Config ─────────────────────────────────────────────────────────────────────
 SECRET         = "AutoTyper@2024#Sanjiv$Secure!Key"
 GMAIL_ADDRESS  = "autotyper.keys@gmail.com"
 GMAIL_PASSWORD = "yfjaevrshnmuicac"
-DB_PATH        = "/tmp/licenses.db"  # Use /tmp — always writable on Railway
+DB_PATH        = "/tmp/licenses.db"
+
+# ── App ────────────────────────────────────────────────────────────────────────
+app = Flask(__name__)
 
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS licenses (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            key          TEXT UNIQUE NOT NULL,
-            email        TEXT NOT NULL,
-            order_id     TEXT UNIQUE,
-            device_id    TEXT,
-            created_at   TEXT NOT NULL,
-            activated    INTEGER DEFAULT 0,
-            activated_at TEXT
-        )
-    ''')
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS trials (
-            device_id  TEXT PRIMARY KEY,
-            start_time TEXT NOT NULL,
-            ip_address TEXT
-        )
-    ''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS licenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        key TEXT UNIQUE NOT NULL,
+        email TEXT NOT NULL,
+        order_id TEXT UNIQUE,
+        device_id TEXT,
+        created_at TEXT NOT NULL,
+        activated INTEGER DEFAULT 0,
+        activated_at TEXT
+    )''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS trials (
+        device_id TEXT PRIMARY KEY,
+        start_time TEXT NOT NULL,
+        ip_address TEXT
+    )''')
     conn.commit()
     return conn
 
@@ -88,7 +79,7 @@ def send_license_email(email, license_key, order_id):
         <body style="font-family: Arial, sans-serif; background: #f5f5f5; padding: 20px;">
           <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden;">
             <div style="background: linear-gradient(135deg, #0078d4, #00b4d8); padding: 30px; text-align: center;">
-              <h1 style="color: white; margin: 0;">⌨ AutoTyper</h1>
+              <h1 style="color: white; margin: 0;">AutoTyper</h1>
               <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0;">Thank you for your purchase!</p>
             </div>
             <div style="padding: 30px;">
@@ -98,25 +89,21 @@ def send_license_email(email, license_key, order_id):
               </div>
               <h3 style="color: #1a1a2e;">How to Activate:</h3>
               <ol style="color: #555; line-height: 1.8;">
-                <li>Open <strong>AutoTyper.exe</strong></li>
+                <li>Open AutoTyper.exe</li>
                 <li>Enter your key when prompted</li>
-                <li>Click <strong>Activate</strong></li>
+                <li>Click Activate</li>
                 <li>Done! Full access unlocked forever</li>
               </ol>
               <div style="background: #f0f7ff; border-left: 4px solid #0078d4; padding: 12px 16px; border-radius: 4px; margin: 20px 0;">
                 <p style="margin: 0; color: #555; font-size: 14px;">
-                  <strong>Note:</strong> This key works on <strong>1 device only</strong>.
-                  Need to transfer? Reply to this email.
+                  This key works on 1 device only. Need to transfer? Reply to this email.
                 </p>
               </div>
-              <p style="color: #555;">Order ID: <code>{order_id}</code></p>
-              <p style="color: #555;">Need help? Just reply to this email!</p>
+              <p style="color: #555;">Order ID: {order_id}</p>
+              <p style="color: #555;">Need help? Reply to this email!</p>
             </div>
             <div style="background: #f5f5f5; padding: 20px; text-align: center; border-top: 1px solid #eee;">
-              <p style="color: #999; font-size: 13px; margin: 0;">
-                AutoTyper — Human-Like Auto Typing App<br>
-                One-time purchase • Lifetime license • 1 device
-              </p>
+              <p style="color: #999; font-size: 13px; margin: 0;">AutoTyper - One-time purchase - Lifetime license - 1 device</p>
             </div>
           </div>
         </body>
@@ -127,67 +114,58 @@ def send_license_email(email, license_key, order_id):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
             server.sendmail(GMAIL_ADDRESS, email, msg.as_string())
-        print(f"✓ Email sent to {email}")
+        print(f"Email sent to {email}")
         return True
     except Exception as e:
-        print(f"✗ Email failed: {e}")
+        print(f"Email failed: {e}")
         return False
+
+def send_email_async(email, key, order_id):
+    thread = threading.Thread(target=send_license_email, args=(email, key, order_id))
+    thread.daemon = True
+    thread.start()
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 @app.route('/', methods=['GET'])
 def home():
-    return jsonify({"status": "AutoTyper License Server running!", "version": "3.0"})
+    return jsonify({"status": "AutoTyper License Server running!", "version": "4.0"})
 
 @app.route('/webhook/gumroad', methods=['POST'])
 def gumroad_webhook():
     try:
-        print("=== WEBHOOK HIT ===")
         data = request.form.to_dict()
         if not data:
             data = request.get_json(silent=True) or {}
 
-        print(f"Data received: {json.dumps(data, indent=2)}")
+        print(f"Webhook: {json.dumps(data)}")
 
         email    = data.get('email', '') or data.get('buyer_email', '')
-        order_id = data.get('sale_id', '') or data.get('order_id', 'no_order_id')
-
-        print(f"Email: {email}, Order: {order_id}")
+        order_id = data.get('sale_id', '') or data.get('order_id', 'no_id')
 
         if not email:
-            print("ERROR: No email found")
             return jsonify({"error": "No email"}), 200
 
-        print("Connecting to DB...")
         conn = get_db()
-        print("DB connected!")
-
         existing = conn.execute('SELECT key FROM licenses WHERE order_id = ?', (order_id,)).fetchone()
-
         if existing:
             conn.close()
-            print("Already processed!")
             return jsonify({"status": "already_processed"}), 200
 
-        print("Generating key...")
         key = generate_key()
-        print(f"Key generated: {key}")
-
         conn.execute(
             'INSERT INTO licenses (key, email, order_id, created_at) VALUES (?, ?, ?, ?)',
             (key, email, order_id, datetime.now().isoformat())
         )
         conn.commit()
         conn.close()
-        print("Saved to DB!")
 
-        print("Sending email in background...")
         send_email_async(email, key, order_id)
 
-        print(f"✓ Done! License issued: {key} → {email}")
+        print(f"License issued: {key} to {email}")
         return jsonify({"status": "success", "key": key}), 200
 
     except Exception as e:
-        print(f"WEBHOOK ERROR: {e}")
+        print(f"Error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 200
@@ -242,8 +220,7 @@ def trial_check():
         row = conn.execute('SELECT start_time FROM trials WHERE device_id = ?', (device_id,)).fetchone()
 
         if row:
-            start      = datetime.fromisoformat(row[0])
-            hours_used = (datetime.now() - start).total_seconds() / 3600
+            hours_used = (datetime.now() - datetime.fromisoformat(row[0])).total_seconds() / 3600
             conn.close()
             return jsonify({"allowed": hours_used < 48, "hours_used": round(hours_used, 1)}), 200
         else:
@@ -260,8 +237,7 @@ def trial_check():
 
 @app.route('/licenses', methods=['GET'])
 def list_licenses():
-    secret = request.args.get('secret', '')
-    if secret != 'autotyper_admin_2024':
+    if request.args.get('secret') != 'autotyper_admin_2024':
         return jsonify({"error": "Unauthorized"}), 401
 
     conn = get_db()
@@ -270,11 +246,12 @@ def list_licenses():
     ).fetchall()
     conn.close()
 
-    licenses = [{"key": r[0], "email": r[1], "order_id": r[2],
-                 "created_at": r[3], "activated": bool(r[4])} for r in rows]
-    return jsonify({"total": len(licenses), "licenses": licenses})
+    return jsonify({
+        "total": len(rows),
+        "licenses": [{"key": r[0], "email": r[1], "order_id": r[2],
+                      "created_at": r[3], "activated": bool(r[4])} for r in rows]
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"✓ AutoTyper License Server v3.0 starting on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
