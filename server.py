@@ -16,7 +16,13 @@ from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-app = Flask(__name__)
+import threading
+
+def send_email_async(email, key, order_id):
+    """Send email in background thread — prevents worker timeout"""
+    thread = threading.Thread(target=send_license_email, args=(email, key, order_id))
+    thread.daemon = True
+    thread.start()
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 SECRET         = "AutoTyper@2024#Sanjiv$Secure!Key"
@@ -174,8 +180,8 @@ def gumroad_webhook():
         conn.close()
         print("Saved to DB!")
 
-        print("Sending email...")
-        send_license_email(email, key, order_id)
+        print("Sending email in background...")
+        send_email_async(email, key, order_id)
 
         print(f"✓ Done! License issued: {key} → {email}")
         return jsonify({"status": "success", "key": key}), 200
